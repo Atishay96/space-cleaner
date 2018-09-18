@@ -1,0 +1,22 @@
+{
+  "name": "space-cleaner",
+  "version": "1.0.0",
+  "description": "for deleting unused files from server which aren't present in mongodb record",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "delete",
+    "files",
+    "server",
+    "mongodb",
+    "unlinked",
+    "nodejs"
+  ],
+  "author": "atishay",
+  "license": "ISC",
+  "dependencies": {
+    "mongodb": "3.1.4"
+  }
+}
