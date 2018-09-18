@@ -9,7 +9,7 @@
 var fs = require('fs');
 var MongoClient = require('mongodb').MongoClient;
 var path = require('path');
-var AWS = require('aws-sdk');
+//var AWS = require('aws-sdk');
 
 
 //constants
