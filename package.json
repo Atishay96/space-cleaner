@@ -12,9 +12,19 @@
     "server",
     "mongodb",
     "unlinked",
-    "nodejs"
+    "nodejs",
+    "space-cleaner",
+    "cleaner",
+    "storage"
   ],
-  "author": "atishay",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Atishay96/space-cleaner"
+  },
+  "author": {
+    "name": "Atishay Jain",
+    "url": "https://atishay96.github.io/"
+  },
   "license": "ISC",
   "dependencies": {
     "mongodb": "3.1.4"
