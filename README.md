@@ -9,6 +9,8 @@ Installation
 ==
 
     npm install space-cleaner
+
+    yarn add space-cleaner
     
 Pull Requests
 ==
@@ -31,10 +33,21 @@ Usage (Basic)
 
 Extra Parameters
 ==
+> *cron* -> cron and files can be passed as extra paramaters. inputs -> time in milliseconds or false.
+
+> *files* -> files have two paramaters exclude and include only one can be passed.
+
+>> *exclude* -> will exclude these extensions while deleting
+
+>> *include* -> will include only these extensions won't consider others
+
+> *s3* -> Either true or false can be passed
+
+>> *s3Creds* -> In bucketName, accessKeyId, secretAccessKey, region will be passed. If any paramater is missing it will consider s3 as false.
 
 ```javascript
   var cleaner = require('space-cleaner');
-  cleaner.action('./public', 'move-with-log', { dbName: 'test', dbUrl: 'mongodb://localhost:27017', models: { 'user': ['profilePic','profilePicCompressed','userFile'], 'message': ['file'] } }, { cron: 5000, files: { exclude:['jpg'] } } );
+  cleaner.action('./public', 'move-with-log', { dbName: 'test', dbUrl: 'mongodb://localhost:27017', models: { 'user': ['profilePic','profilePicCompressed','userFile'], 'message': ['file'] } }, { cron: 5000, files: { exclude: ['jpg'] } } );
   
   /*
   * cron and files can be passed as extra paramaters.
@@ -42,5 +55,22 @@ Extra Parameters
   * inside files, exclude and include can be passed. only one will be taken in account.
   * if both exclude and include are passed then only include will work.
   * exclude/include will exclude/include all the file extensions which matches with those given inside.
+  */
+```
+
+
+```javascript
+  var cleaner = require('space-cleaner');
+  cleaner.action('./public', 'move-with-log', { dbName: 'test', dbUrl: 'mongodb://localhost:27017', models: { 'user': ['profilePic','profilePicCompressed','userFile'], 'message': ['file'] } }, { cron: false, s3: true, s3Creds: { 
+    bucketName: 'space-cleaner', 
+	accessKeyId: '********************', 
+	secretAccessKey: '****************************************', 
+	region: 'ap-south-1' 
+    }
+  });
+  
+  /*
+  * if bucketName is wrong it will throw an error it won't create a new bucket
+  * if s3 is false, or not passed then s3Creds won't be considered
   */
 ```

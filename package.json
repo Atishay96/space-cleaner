@@ -1,6 +1,6 @@
 {
   "name": "space-cleaner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "for deleting unused files from server which aren't present in mongodb record",
   "main": "index.js",
   "scripts": {
@@ -15,7 +15,8 @@
     "nodejs",
     "space-cleaner",
     "cleaner",
-    "storage"
+    "storage",
+    "s3"
   ],
   "repository": {
     "type": "git",
@@ -27,6 +28,7 @@
   },
   "license": "ISC",
   "dependencies": {
+    "aws-sdk": "^2.318.0",
     "mongodb": "3.1.4"
   }
 }

@@ -9,7 +9,7 @@
 var fs = require('fs');
 var MongoClient = require('mongodb').MongoClient;
 var path = require('path');
-//var AWS = require('aws-sdk');
+var AWS = require('aws-sdk');
 
 
 //constants
@@ -75,9 +75,9 @@ function hardDelete(files) {
             file += 'DELETED FILES ON - ' + (new Date()).toISOString();
             files.map(function(v, i) {
                 file += '\r\n ' + v + ' deleted permanently';
-                // fs.unlink(v, function(err){
-                //     if(err) error(err);
-                // });
+                fs.unlink(v, function(err){
+                    if(err) error(err);
+                });
             })
             fs.writeFile('log-' + (new Date()).toLocaleDateString() + '.txt', file, function (err) {
                 printAlways('Saved!');
@@ -91,22 +91,95 @@ function hardDelete(files) {
 /**
  * 
  * @param {Array} files
+ * @param {Object} s3
  * logic - loop -> convert the string to array -> check for each iteration -> when done move the file to the location
  */
-function moveWithLog(files, s3) {
-    try {
-        if( s3 ){
-            if( s3.region ){
-                s3.region = 'ap-south-1';
-            }
-            AWS.config.update({
-                accessKeyId: s3.accessKeyId,
-                secretAccessKey: s3.secretAccessKey,
-                region: s3.region
-            });
-            var s3bucket = new AWS.S3({ params: { Bucket: s3.bucketName } })
+async function syncS3(files, s3) {
+    var s3bucket;
+    var path = './filesCleaner';    
+    if( s3 ){
+        if( !s3.region ){
+            s3.region = 'ap-south-1';
         }
-        var path = './filesCleaner';
+        AWS.config.update({
+            accessKeyId: s3.accessKeyId,
+            secretAccessKey: s3.secretAccessKey,
+            // region: s3.region
+        });
+        s3bucket = new AWS.S3({ params: { Bucket: s3.bucketName } });
+        var options = {
+            Bucket: s3.bucketName
+        };
+        try {
+            await s3bucket.headBucket(options).promise();
+            print("Working fine");
+            var uploadFiles = files.map(function(v, i) {
+                return uploadToS3(v, s3, s3bucket);
+            })
+            fs.readFile('log-' + (new Date()).toLocaleDateString() + '.txt', function(err, file){
+                if( !file) {
+                    var file = '';
+                }
+                file = file.toString() || '';
+                // print(file.toString());
+                file += '\r\n \r\n';
+                file += 'FILES MOVED ON S3 AT  - ' + (new Date()).toISOString();
+                var filesAP = uploadFiles.map(function(v, i) {
+                    file += '\r\n ' + v + ' moved to S3 Bucket -' + s3.bucketName + ' .';
+                })
+                Promise.all(filesAP).then( function(filesAPP) {
+                    printAlways('Saved!');
+                    fs.writeFile('log-' + (new Date()).toLocaleDateString() + '.txt', file, function (err) {
+                        if(err) throw err;
+                    });
+                }).catch( function(err) {
+                    error(err);
+                })
+            })
+        } catch (err) {
+            if (err.statusCode === 404) {
+              return error("Bucket doesn't exists.");
+            }
+        }
+    } else {
+        moveWithLog(files, path);
+    }
+}
+
+/**
+*
+* @param {String} file 
+*/
+function uploadToS3(file, s3, s3bucket) {
+    return new Promise(function (resolve, reject) {
+        try{
+            fs.readFile(file, async function(err, fileData){
+                if(err) throw err;
+                let params = {
+                    Bucket: s3.bucketName,
+                    Key: file,
+                    Body: fileData
+                };
+                await s3bucket.putObject(params).promise();
+                fs.unlink(file, function(err){
+                    if(err) error(err);
+                });
+                print(file + ' uploaded on s3');
+                return resolve(file);
+            });
+        } catch(err) {
+            return reject(err);
+        }
+    })
+}
+/**
+ * 
+ * @param {Array} files
+ * @param {Object} s3
+ * logic - loop -> convert the string to array -> check for each iteration -> when done move the file to the location
+ */
+function moveWithLog(files, path) {
+    try {
         if ( !fs.existsSync(path) ){
             fs.mkdirSync(path);
         }
@@ -124,13 +197,14 @@ function moveWithLog(files, s3) {
                 file += '\r\n ' + v + ' moved to filesCleaner folder.';
                 return checkPathAndStore(v, path);              
             })
-            Promise.all(filesAP).then( function(filesAPP){
+            Promise.all(filesAP).then( function(filesAPP) {
                 printAlways('Saved!');
                 fs.writeFile('log-' + (new Date()).toLocaleDateString() + '.txt', file, function (err) {
+                    if(err) throw err;
                 });
             }).catch( function(err) {
                 error(err);
-            })        
+            })
         })
     } catch (err) {
         error(err);
@@ -258,12 +332,12 @@ function getFiles(folderDir, method, db, additional){
         var include;
         var exclude;
         var s3;
-        if( additional.s3 ){
-            if( additional.s3Creds.bucket && additional.s3Creds.accessKeyId && additional.s3Creds.secretAccessKey ){
+        if( additional && additional.s3 ){
+            if( additional.s3Creds.bucketName && additional.s3Creds.accessKeyId && additional.s3Creds.secretAccessKey ){
                 s3 = additional.s3Creds;
             }
         }
-        if( additional.files && additional.files.constructor == Object && Object.keys(additional.files).length ){
+        if( additional && additional.files && additional.files.constructor == Object && Object.keys(additional.files).length ){
             if( additional.files.include ) {
                 var temp = additional.files.include.map( function(x) {
                     return x.toLowerCase();
@@ -314,14 +388,23 @@ function getFiles(folderDir, method, db, additional){
                 
                 const database = client.db(db.dbName);
                 var dbFilesTemp = Object.keys(db.models).map(function(v, i) {
-                    return getDBData(v, database, db.models[v]);
+                    return getDBData(v, database, db.models[v], folderDir);
                 })
                 // var dbFiles = ['./public/a.txt', './public/b.txt', '/public/images/h.txt'];
                 Promise.all(dbFilesTemp).then(function(dbFiles) {
                     dbFiles = dbFiles.filter(Boolean);
                     dbFiles = [].concat.apply([], dbFiles);
+                    var temp = folderDir;
+                    if( temp ) {
+                        if(temp[0] === '.') {
+                            temp = temp.substring(1);
+                        };
+                        if(temp[0] === '/') {
+                            temp = temp.substring(1);
+                        };
+                    }
                     var AllStrings = dbFiles.map(function(v, i) {
-                        return convertString(v);
+                        return convertString(v, temp);
                     })
                     dbFiles = AllStrings;
                     print("Successfully disconnect to Database");
@@ -350,7 +433,6 @@ function getFiles(folderDir, method, db, additional){
                     })
                     print('dbFiles - Filtered')
                     print(dbFilesFiltered);
-    
                     //get common files from dbFilesFiltered && dir
                     // NOTE: CHANGE THE ALGORITHM
                     /**
@@ -372,7 +454,7 @@ function getFiles(folderDir, method, db, additional){
                                 // if (!to) {
                                 //     return error('Please Specify the `to` parameter');
                                 // }
-                                return moveWithLog(common, s3);
+                                return syncS3(common, s3);
                             default:
                                 return error('wrong method key');
                         }
@@ -395,16 +477,32 @@ function endCode() {
  * @param {Object || String} data
  * @param {String} response
  */
-function convertString(data){
+function convertString(data, folderDir){
+    // concatinating folderDir before string with conditions
     if(data.constructor === Object) {
         if(Object.keys(data).length == 1){
-            // print(Object.keys(data));
-            // print('data');
-            // print(data[Object.keys(data)[0]]);
-            return data[Object.keys(data)[0]];
+            var temp = data[Object.keys(data)[0]];
+            if(temp[0] === '.') {
+                temp = temp.substring(1);
+            };
+            if(temp[0] === '/') {
+                temp = temp.substring(1);
+            };
+            if( temp.indexOf(folderDir) === -1 ) {
+                temp = folderDir + '/' + temp;
+            }
+            return temp;
         }
     }else if(data.constructor === String) {
-        print('string');
+        if(data[0] === '.') {
+            data = data.substring(1);
+        };
+        if(data[0] !== '/') {
+            data = data.unshift('/');
+        };
+        if( data.indexOf(folderDir) != -1 ) {
+            data = folderDir + data;
+        }
         return data;
     }else {
         print('some other data type or object have more than one key');
@@ -417,10 +515,10 @@ function convertString(data){
  * @param {Class} db 
  * @param {Array} fields 
  */
-function getDBData(model, db, fields) {
+function getDBData(model, db, fields, folderDir) {
     return new Promise(function(resolve, reject) {
         try {
-            if(!model || !db){
+            if(!model || !db) {
                 return resolve();
             }
             db.collection(model).find({}).toArray(function(err, data) {
@@ -500,8 +598,8 @@ function readFileNames(folderDir) {
 // readFileNames('./'); // models:{ {model_name} : [key_name1, key_name2] }
 // dbUrl -> add mongoose.connect('mongodb://username:password@host:port/database?options...'); change URL according to the need;
 // if same extension comes in both include and exclude it'll consider it only include. NOTE: only one can used at a time
-// action('./public', 'move-with-log', { dbName: 'test', dbUrl : 'mongodb://localhost:27017', models: { 'test': ['1','2','3'], 'test2': ['1'] } }, { cron: '1', files:{ include:['jpg', 'txt'], exclude:['js'], s3: true, s3Creds: { bucketName: '', accessKeyId: '', secretAccessKey: '', region: '' } } );
-
+// action('./public', 'move-with-log', { dbName: 'test', dbUrl : 'mongodb://localhost:27017', models: { 'test': ['1','2','3'], 'test2': ['1'] } }, { cron: '1', files:{ include:['jpg', 'txt'], exclude:['js'], s3: true, s3Creds: { bucketName: 'space-cleaner', accessKeyId: 'AKIAJUQQCCNN2STEDHDQ', secretAccessKey: '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', region: '' } } );
+// check whether public is there or not;
 module.exports = { action: action, readFileNames: readFileNames };
 
 
@@ -512,16 +610,13 @@ module.exports = { action: action, readFileNames: readFileNames };
 
 // FEATURES WHICH CAN BE ADDED
 
-// upload S3 - L
-// delete S3 files - L
 // log file location - M
 // date format time zone - L
 // new location dynamic - M
 // mail changes - L
 // take file created date in account - M
-// Delete Move-With-log after some time - M - NOT REQUIRED MOVE TO S3 BETTER OPTION
 // TEST CASES - M
-
+// check for windows
 
 // PRIORITY LIST
 
@@ -533,10 +628,15 @@ module.exports = { action: action, readFileNames: readFileNames };
 
 // FEATURES COMPLETED
 
+// upload S3 - L
+// delete S3 files - L
+// HANDLE BUG - FOLDERDIR CONCAT IN THE BEGINNING - M
+// Delete Move-With-log after some time - M - NOT REQUIRED MOVE TO S3 BETTER OPTION
 // recursively create folders for rename folder - H
 // Add CRON - H
 // mongo db password and username along with link - H
 // Error Handling (Show Error) - H
 // extension delete - L
-// BUG - EXTENSION DELETE - LETTERS CASE CHECK NOT THERE
+// BUG - EXTENSION DELETE - LETTERS CASE CHECK NOT THERE - M
+// delete empty folder - NOT REQUIRED AS NODE MIGHT THROW UP SOME ERROR
 
